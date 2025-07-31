@@ -7,19 +7,18 @@ export async function POST(request: NextRequest) {
     const { userId, celular, nombres, fechaVencimiento } = body
 
     // Mensaje profesional y directo
-    const message = `Buenos días *${nombres.split(" ")[0]}*,
+const message = `Hola *${nombres.split(" ")[0]}*, buen día 👋🏼
 
-Espero se encuentre muy bien.
+Te escribo para recordarte que la fecha límite para presentar tu declaración de renta del año gravable 2024 es el *${fechaVencimiento}*.
 
-Le escribo para recordarle que su declaración de renta correspondiente al año gravable 2024 tiene como fecha límite de presentación el *${fechaVencimiento}*.
+Es fundamental contar con los documentos a tiempo para evitar sanciones por extemporaneidad. Si aún no los has enviado, te agradecería hacerlo lo antes posible para avanzar con la elaboración de tu declaración.
 
-Es importante que presente su declaración antes de esta fecha para evitar sanciones por extemporaneidad.
+Si tienes alguna duda o necesitas asesoría, no dudes en escribirme.
 
-Si requiere asesoría o tiene alguna consulta, no dude en contactarme.
+Quedo atento.
 
-Quedo atento a cualquier inquietud.
-
-Saludos cordiales.`
+Elier Fernando Rosero Bravo  
+Contador Público`;
 
     // Marcar usuario como notificado en la base de datos
     if (userId) {
