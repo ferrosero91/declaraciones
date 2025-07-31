@@ -9,6 +9,13 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  experimental: {
+    serverComponentsExternalPackages: ['pg']
+  },
+  webpack: (config) => {
+    config.externals.push('pg', 'pg-native');
+    return config;
+  },
 }
 
 export default nextConfig
