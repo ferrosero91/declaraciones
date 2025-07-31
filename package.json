@@ -12,7 +12,8 @@
     "db:seed": "node scripts/seed-data.js",
     "db:setup": "npm run db:init && npm run db:seed",
     "setup:production": "node scripts/setup-production.js",
-    "build:production": "node scripts/build-production.js"
+    "build:production": "node scripts/build-production.js",
+    "postinstall": "npm run setup:production || true"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

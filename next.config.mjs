@@ -10,8 +10,17 @@ const nextConfig = {
     unoptimized: true,
   },
   serverExternalPackages: ['pg'],
-  webpack: (config) => {
-    config.externals.push('pg', 'pg-native');
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals.push('pg', 'pg-native');
+    }
+    
+    // Resolver alias para @ paths
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': require('path').resolve(__dirname),
+    };
+    
     return config;
   },
 }
