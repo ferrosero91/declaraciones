@@ -12,12 +12,25 @@ async function setupProduction() {
   try {
     console.log('🚀 Configurando base de datos en producción...')
     
-    // Leer y ejecutar el script de creación de tablas
-    const sqlPath = path.join(__dirname, 'create-tables.sql')
-    const sql = fs.readFileSync(sqlPath, 'utf8')
+    // Verificar si las tablas ya existen
+    const tablesExist = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'users'
+      );
+    `)
     
-    await pool.query(sql)
-    console.log('✅ Tablas creadas correctamente')
+    if (!tablesExist.rows[0].exists) {
+      // Leer y ejecutar el script de creación de tablas
+      const sqlPath = path.join(__dirname, 'create-tables.sql')
+      const sql = fs.readFileSync(sqlPath, 'utf8')
+      
+      await pool.query(sql)
+      console.log('✅ Tablas creadas correctamente')
+    } else {
+      console.log('ℹ️ Las tablas ya existen, saltando creación')
+    }
     
     // Verificar si ya hay datos
     const result = await pool.query('SELECT COUNT(*) as count FROM users')
