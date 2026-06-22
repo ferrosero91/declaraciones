@@ -19,12 +19,13 @@ ENV HOSTNAME=0.0.0.0
 
 RUN addgroup -g 1001 -S nodejs && adduser -u 1001 -S nextjs -G nodejs
 
-# Copiar servidor standalone (incluye .next/server y node_modules traspilados)
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-# Copiar assets estáticos DENTRO del standalone (server.js los busca aqui)
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Copiar TODO el proyecto construido (node_modules + .next + public + scripts + package.json)
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=nextjs:nodejs /app/next.config.mjs ./next.config.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/start.sh ./start.sh
 
 USER nextjs
