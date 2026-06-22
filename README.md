@@ -34,8 +34,9 @@ npm run dev
 | `POSTGRES_DB`     | Nombre de la base de datos (auto-creada) | `declaraciones`                          |
 | `POSTGRES_USER`   | Usuario PostgreSQL                       | `declaraciones`                          |
 | `POSTGRES_PASSWORD` | Contraseña PostgreSQL                  | `declaraciones`                          |
-| `NEXT_PUBLIC_APP_URL` | URL pública de la app               | `https://declaraciones.tudominio.com`   |
-| `PORT`           | Puerto expuesto por el contenedor app    | `3000`                                   |
+| `DOMAIN`         | Dominio público (sin http/https)          | `declaraciones.gestionxpress.app`       |
+| `NEXT_PUBLIC_APP_URL` | URL pública de la app (con https://)| `https://declaraciones.gestionxpress.app` |
+| `PORT`           | Puerto expuesto por el contenedor app    | `3001`                                   |
 
 > `DATABASE_URL` se construye automáticamente a partir de `POSTGRES_*` en el `docker-compose.yml`. No necesitas configurarla manualmente.
 
@@ -53,33 +54,31 @@ npm run dev
 POSTGRES_DB=declaraciones
 POSTGRES_USER=declaraciones
 POSTGRES_PASSWORD=declaraciones
-NEXT_PUBLIC_APP_URL=https://declaraciones.tudominio.com
-PORT=3000
+DOMAIN=declaraciones.gestionxpress.app
+NEXT_PUBLIC_APP_URL=https://declaraciones.gestionxpress.app
+PORT=3001
 ```
 
 > Cambia `POSTGRES_PASSWORD` por una contraseña segura en producción.
 
-### 3. Configurar dominio (Application → Domains)
-
-- Agregar dominio o subdominio
-- **Target Port**: `3000`
-- Dokploy genera proxy Traefik + Let's Encrypt automáticamente
-
-### 4. Deploy
+### 3. Deploy
 
 Click **Deploy**. En el primer arranque:
 1. `postgres:15-alpine` arranca con el volumen `postgres_data` (persistente)
 2. El healthcheck de Postgres espera a que esté listo (`pg_isready`)
 3. Una vez healthy, arranca el contenedor `app`
-4. `start.sh` ejecuta `node scripts/init-db.js` (idempotente, crea las tablas `users`)
-5. Finalmente arranca `npm start`
+4. Traefik detecta los labels y enruta `DOMAIN` → contenedor:3000 (con TLS Let's Encrypt automático)
+5. `start.sh` ejecuta `node scripts/init-db.js` (idempotente, crea las tablas `users`)
+6. Finalmente arranca `npm start`
 
-### 5. (Opcional) Cargar datos de ejemplo
+### 4. (Opcional) Cargar datos de ejemplo
 
 **Application → Terminal**:
 ```bash
 node scripts/seed-data.js
 ```
+
+> No necesitas agregar el dominio manualmente en Dokploy → Domains. Los labels de Traefik ya están en el compose y se configuran solos desde `DOMAIN`. Si lo agregaste manualmente antes, puedes eliminarlo para evitar conflicto.
 
 ## Notas técnicas
 
