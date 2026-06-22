@@ -1,45 +1,56 @@
-require('dotenv').config({ path: '.env.local' })
-const { Pool } = require('pg')
-const fs = require('fs')
+const Database = require('better-sqlite3')
 const path = require('path')
+const fs = require('fs')
 
-// Configuración de la base de datos
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  // Fallback para desarrollo local
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'declaraciones_tributarias',
-  password: process.env.DB_PASSWORD || 'password123',
-  port: parseInt(process.env.DB_PORT || '5434'),
-})
+const DB_PATH = process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'declaraciones.db')
 
-async function initDatabase() {
+const dataDir = path.dirname(DB_PATH)
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true })
+}
+
+const db = new Database(DB_PATH)
+db.pragma('journal_mode = WAL')
+db.pragma('foreign_keys = ON')
+
+function initDatabase() {
   try {
-    console.log('🔄 Conectando a PostgreSQL...')
-    
-    // Leer el archivo SQL
-    const sqlPath = path.join(__dirname, 'create-tables.sql')
-    const sql = fs.readFileSync(sqlPath, 'utf8')
-    
-    // Ejecutar el script SQL
-    await pool.query(sql)
-    
-    console.log('✅ Base de datos inicializada correctamente')
-    console.log('📊 Tablas creadas:')
-    console.log('   - users (usuarios)')
-    console.log('   - notifications (notificaciones)')
-    
+    console.log('Inicializando SQLite en:', DB_PATH)
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        cedula TEXT UNIQUE NOT NULL,
+        nombres TEXT NOT NULL,
+        celular TEXT NOT NULL,
+        fecha_vencimiento TEXT NOT NULL,
+        notificado INTEGER NOT NULL DEFAULT 0,
+        last_notification TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_users_cedula ON users(cedula);
+      CREATE INDEX IF NOT EXISTS idx_users_fecha_vencimiento ON users(fecha_vencimiento);
+
+      CREATE TRIGGER IF NOT EXISTS update_users_updated_at
+      AFTER UPDATE ON users
+      FOR EACH ROW
+      BEGIN
+        UPDATE users SET updated_at = datetime('now') WHERE id = NEW.id;
+      END;
+    `)
+
+    console.log('Esquema creado correctamente')
+    console.log('Tabla: users')
   } catch (error) {
-    console.error('❌ Error inicializando la base de datos:', error.message)
+    console.error('Error inicializando la base de datos:', error.message)
     process.exit(1)
   } finally {
-    await pool.end()
+    db.close()
   }
 }
 
-// Ejecutar si se llama directamente
 if (require.main === module) {
   initDatabase()
 }

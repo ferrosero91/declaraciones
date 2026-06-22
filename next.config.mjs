@@ -15,19 +15,13 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  serverExternalPackages: ['pg'],
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      config.externals.push('pg', 'pg-native');
-    }
-    
-    // Resolver alias para @ paths
+  serverExternalPackages: ['better-sqlite3'],
+  webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,
       '@': path.resolve(__dirname),
-    };
-    
-    return config;
+    }
+    return config
   },
 }
 

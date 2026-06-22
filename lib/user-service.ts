@@ -1,6 +1,7 @@
-import { query } from './database'
+import { randomUUID } from 'crypto'
+import { all, get, run, transaction } from './database'
 import { calculateDueDate } from './tax-calendar'
-import { sortUsersByDueDate } from './date-utils'
+import { sortUsersByDueDate, getUrgencyLevel } from './date-utils'
 
 export interface User {
   id: string
@@ -9,198 +10,172 @@ export interface User {
   celular: string
   fechaVencimiento: string
   notificado: boolean
-  lastNotification?: string
+  lastNotification?: string | null
   createdAt: string
   updatedAt: string
 }
 
+interface UserRow {
+  id: string
+  cedula: string
+  nombres: string
+  celular: string
+  fecha_vencimiento: string
+  notificado: number
+  last_notification: string | null
+  created_at: string
+  updated_at: string
+}
+
+function rowToUser(row: UserRow): User {
+  return {
+    id: row.id,
+    cedula: row.cedula,
+    nombres: row.nombres,
+    celular: row.celular,
+    fechaVencimiento: row.fecha_vencimiento,
+    notificado: Boolean(row.notificado),
+    lastNotification: row.last_notification ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+const SELECT_COLUMNS = `
+  id,
+  cedula,
+  nombres,
+  celular,
+  fecha_vencimiento,
+  notificado,
+  last_notification,
+  created_at,
+  updated_at
+`
+
 export class UserService {
-  // Obtener todos los usuarios ordenados por fecha de vencimiento
   static async getAllUsers(): Promise<User[]> {
     try {
-      const result = await query(`
-        SELECT 
-          id,
-          cedula,
-          nombres,
-          celular,
-          fecha_vencimiento as "fechaVencimiento",
-          notificado,
-          last_notification as "lastNotification",
-          created_at as "createdAt",
-          updated_at as "updatedAt"
-        FROM users 
-      `)
-      
-      const users = result.rows.map(row => ({
-        ...row,
-        lastNotification: row.lastNotification ? row.lastNotification.toISOString().split('T')[0] : undefined
-      }))
-
-      // Ordenar por fecha de vencimiento usando la función auxiliar
-      return sortUsersByDueDate(users)
+      const rows = all<UserRow>(`SELECT ${SELECT_COLUMNS} FROM users`)
+      return sortUsersByDueDate(rows.map(rowToUser))
     } catch (error) {
       console.error('Error obteniendo usuarios:', error)
       throw new Error('Error al obtener usuarios')
     }
   }
 
-  // Crear un nuevo usuario
   static async createUser(userData: {
     cedula: string
     nombres: string
     celular: string
   }): Promise<User> {
     const { cedula, nombres, celular } = userData
-    
+
     try {
-      // Verificar si el usuario ya existe
-      const existingUser = await query(
-        'SELECT id FROM users WHERE cedula = $1',
-        [cedula]
+      const existing = get<{ id: string }>(
+        'SELECT id FROM users WHERE cedula = ?',
+        cedula,
       )
-      
-      if (existingUser.rows.length > 0) {
+      if (existing) {
         throw new Error('Ya existe un usuario con esta cédula')
       }
 
-      // Calcular fecha de vencimiento
+      const id = randomUUID()
       const fechaVencimiento = calculateDueDate(cedula)
 
-      // Insertar nuevo usuario
-      const result = await query(`
-        INSERT INTO users (cedula, nombres, celular, fecha_vencimiento)
-        VALUES ($1, $2, $3, $4)
-        RETURNING 
-          id,
-          cedula,
-          nombres,
-          celular,
-          fecha_vencimiento as "fechaVencimiento",
-          notificado,
-          last_notification as "lastNotification",
-          created_at as "createdAt",
-          updated_at as "updatedAt"
-      `, [cedula, nombres, celular, fechaVencimiento])
+      run(
+        `INSERT INTO users (id, cedula, nombres, celular, fecha_vencimiento)
+         VALUES (?, ?, ?, ?, ?)`,
+        id, cedula, nombres, celular, fechaVencimiento,
+      )
 
-      return result.rows[0]
+      const row = get<UserRow>(
+        `SELECT ${SELECT_COLUMNS} FROM users WHERE id = ?`,
+        id,
+      )
+      return rowToUser(row!)
     } catch (error) {
       console.error('Error creando usuario:', error)
       throw error
     }
   }
 
-  // Buscar usuarios por término ordenados por fecha de vencimiento
   static async searchUsers(searchTerm: string): Promise<User[]> {
     try {
-      const result = await query(`
-        SELECT 
-          id,
-          cedula,
-          nombres,
-          celular,
-          fecha_vencimiento as "fechaVencimiento",
-          notificado,
-          last_notification as "lastNotification",
-          created_at as "createdAt",
-          updated_at as "updatedAt"
-        FROM users 
-        WHERE 
-          LOWER(nombres) LIKE LOWER($1) OR 
-          cedula LIKE $1
-      `, [`%${searchTerm}%`])
-      
-      const users = result.rows.map(row => ({
-        ...row,
-        lastNotification: row.lastNotification ? row.lastNotification.toISOString().split('T')[0] : undefined
-      }))
-
-      // Ordenar por fecha de vencimiento usando la función auxiliar
-      return sortUsersByDueDate(users)
+      const pattern = `%${searchTerm}%`
+      const rows = all<UserRow>(
+        `SELECT ${SELECT_COLUMNS} FROM users
+         WHERE LOWER(nombres) LIKE LOWER(?) OR cedula LIKE ?`,
+        pattern, pattern,
+      )
+      return sortUsersByDueDate(rows.map(rowToUser))
     } catch (error) {
       console.error('Error buscando usuarios:', error)
       throw new Error('Error al buscar usuarios')
     }
   }
 
-  // Marcar usuario como notificado
   static async markAsNotified(userId: string): Promise<void> {
     try {
-      await query(`
-        UPDATE users 
-        SET 
-          notificado = true,
-          last_notification = CURRENT_DATE,
-          updated_at = NOW()
-        WHERE id = $1
-      `, [userId])
+      const today = new Date().toISOString().split('T')[0]
+      const result = run(
+        `UPDATE users
+         SET notificado = 1, last_notification = ?, updated_at = datetime('now')
+         WHERE id = ?`,
+        today, userId,
+      )
+      if (result.changes === 0) {
+        throw new Error('Usuario no encontrado')
+      }
     } catch (error) {
-      console.error('Error marcando usuario como notificado:', error)
+      console.error('Error marcando como notificado:', error)
       throw new Error('Error al actualizar estado de notificación')
     }
   }
 
-  // Actualizar un usuario
   static async updateUser(id: string, userData: {
     cedula: string
     nombres: string
     celular: string
   }): Promise<User> {
     const { cedula, nombres, celular } = userData
-    
+
     try {
-      // Verificar si otro usuario ya tiene esta cédula
-      const existingUser = await query(
-        'SELECT id FROM users WHERE cedula = $1 AND id != $2',
-        [cedula, id]
+      const existing = get<{ id: string }>(
+        'SELECT id FROM users WHERE cedula = ? AND id != ?',
+        cedula, id,
       )
-      
-      if (existingUser.rows.length > 0) {
+      if (existing) {
         throw new Error('Ya existe otro usuario con esta cédula')
       }
 
-      // Calcular nueva fecha de vencimiento
       const fechaVencimiento = calculateDueDate(cedula)
+      const result = run(
+        `UPDATE users
+         SET cedula = ?, nombres = ?, celular = ?, fecha_vencimiento = ?, updated_at = datetime('now')
+         WHERE id = ?`,
+        cedula, nombres, celular, fechaVencimiento, id,
+      )
 
-      // Actualizar usuario
-      const result = await query(`
-        UPDATE users 
-        SET 
-          cedula = $1,
-          nombres = $2,
-          celular = $3,
-          fecha_vencimiento = $4,
-          updated_at = NOW()
-        WHERE id = $5
-        RETURNING 
-          id,
-          cedula,
-          nombres,
-          celular,
-          fecha_vencimiento as "fechaVencimiento",
-          notificado,
-          last_notification as "lastNotification",
-          created_at as "createdAt",
-          updated_at as "updatedAt"
-      `, [cedula, nombres, celular, fechaVencimiento, id])
-
-      if (result.rows.length === 0) {
+      if (result.changes === 0) {
         throw new Error('Usuario no encontrado')
       }
 
-      return result.rows[0]
+      const row = get<UserRow>(
+        `SELECT ${SELECT_COLUMNS} FROM users WHERE id = ?`,
+        id,
+      )
+      return rowToUser(row!)
     } catch (error) {
       console.error('Error actualizando usuario:', error)
       throw error
     }
   }
 
-  // Eliminar un usuario
   static async deleteUser(id: string): Promise<void> {
     try {
-      const result = await query('DELETE FROM users WHERE id = $1', [id])
-      
-      if (result.rowCount === 0) {
+      const result = run('DELETE FROM users WHERE id = ?', id)
+      if (result.changes === 0) {
         throw new Error('Usuario no encontrado')
       }
     } catch (error) {
@@ -209,40 +184,19 @@ export class UserService {
     }
   }
 
-  // Obtener un usuario por ID
   static async getUserById(id: string): Promise<User | null> {
     try {
-      const result = await query(`
-        SELECT 
-          id,
-          cedula,
-          nombres,
-          celular,
-          fecha_vencimiento as "fechaVencimiento",
-          notificado,
-          last_notification as "lastNotification",
-          created_at as "createdAt",
-          updated_at as "updatedAt"
-        FROM users 
-        WHERE id = $1
-      `, [id])
-      
-      if (result.rows.length === 0) {
-        return null
-      }
-
-      const row = result.rows[0]
-      return {
-        ...row,
-        lastNotification: row.lastNotification ? row.lastNotification.toISOString().split('T')[0] : undefined
-      }
+      const row = get<UserRow>(
+        `SELECT ${SELECT_COLUMNS} FROM users WHERE id = ?`,
+        id,
+      )
+      return row ? rowToUser(row) : null
     } catch (error) {
       console.error('Error obteniendo usuario:', error)
       throw new Error('Error al obtener usuario')
     }
   }
 
-  // Crear múltiples usuarios (para importación Excel)
   static async createMultipleUsers(usersData: Array<{
     cedula: string
     nombres: string
@@ -251,74 +205,69 @@ export class UserService {
     let created = 0
     const errors: Array<{ cedula: string; error: string }> = []
 
-    for (const userData of usersData) {
-      try {
-        await this.createUser(userData)
-        created++
-      } catch (error) {
-        errors.push({
-          cedula: userData.cedula,
-          error: error instanceof Error ? error.message : 'Error desconocido'
-        })
+    transaction(() => {
+      for (const userData of usersData) {
+        try {
+          const existing = get<{ id: string }>(
+            'SELECT id FROM users WHERE cedula = ?',
+            userData.cedula,
+          )
+          if (existing) {
+            throw new Error('Ya existe un usuario con esta cédula')
+          }
+
+          const id = randomUUID()
+          const fechaVencimiento = calculateDueDate(userData.cedula)
+          run(
+            `INSERT INTO users (id, cedula, nombres, celular, fecha_vencimiento)
+             VALUES (?, ?, ?, ?, ?)`,
+            id, userData.cedula, userData.nombres, userData.celular, fechaVencimiento,
+          )
+          created++
+        } catch (error) {
+          errors.push({
+            cedula: userData.cedula,
+            error: error instanceof Error ? error.message : 'Error desconocido',
+          })
+        }
       }
-    }
+    })
 
     return { created, errors }
   }
 
-  // Obtener estadísticas detalladas
   static async getStats() {
     try {
-      // Estadísticas básicas
-      const basicStats = await query(`
-        SELECT 
+      const totals = get<{ total: number; notified: number; pending: number }>(`
+        SELECT
           COUNT(*) as total,
-          COUNT(*) FILTER (WHERE notificado = true) as notified,
-          COUNT(*) FILTER (WHERE notificado = false) as pending
+          SUM(CASE WHEN notificado = 1 THEN 1 ELSE 0 END) as notified,
+          SUM(CASE WHEN notificado = 0 THEN 1 ELSE 0 END) as pending
         FROM users
-      `)
+      `) ?? { total: 0, notified: 0, pending: 0 }
 
-      // Casos urgentes (vencen en los próximos 7 días)
-      const urgentCases = await query(`
-        SELECT COUNT(*) as urgent
-        FROM users 
-        WHERE notificado = false 
-        AND (
-          fecha_vencimiento LIKE '%8-2025' OR 
-          fecha_vencimiento LIKE '1-9-2025' OR 
-          fecha_vencimiento LIKE '2-9-2025' OR
-          fecha_vencimiento LIKE '3-9-2025' OR
-          fecha_vencimiento LIKE '4-9-2025' OR
-          fecha_vencimiento LIKE '5-9-2025'
-        )
-      `)
+      const rows = all<{ fecha_vencimiento: string; notificado: number }>(
+        'SELECT fecha_vencimiento, notificado FROM users',
+      )
 
-      const stats = basicStats.rows[0]
-      const urgent = urgentCases.rows[0].urgent
+      let urgent = 0
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      for (const row of rows) {
+        if (row.notificado === 1) continue
+        const level = getUrgencyLevel(row.fecha_vencimiento)
+        if (level === 'urgente' || level === 'vencido') urgent++
+      }
 
       return {
-        total: parseInt(stats.total),
-        notified: parseInt(stats.notified),
-        pending: parseInt(stats.pending),
-        urgent: parseInt(urgent),
-        // Calcular porcentajes de cambio (simulados para demo)
-        totalChange: '+12%',
-        pendingChange: '-5%',
-        notifiedChange: '+28%',
-        urgentChange: '-15%'
+        total: totals.total,
+        notified: totals.notified,
+        pending: totals.pending,
+        urgent,
       }
     } catch (error) {
       console.error('Error obteniendo estadísticas:', error)
-      return { 
-        total: 0, 
-        notified: 0, 
-        pending: 0, 
-        urgent: 0,
-        totalChange: '0%',
-        pendingChange: '0%',
-        notifiedChange: '0%',
-        urgentChange: '0%'
-      }
+      return { total: 0, notified: 0, pending: 0, urgent: 0 }
     }
   }
 }
