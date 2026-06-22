@@ -29,61 +29,64 @@ npm run dev
 
 ## Variables de entorno
 
-| Variable         | Descripción                              | Ejemplo                                   |
-|------------------|------------------------------------------|-------------------------------------------|
-| `DATABASE_URL`    | URL de conexión PostgreSQL (obligatoria) | `postgresql://declaraciones:declaraciones@dbrender-declaraciones-ofbykv:5432/declaraciones` |
-| `DATABASE_SSL`   | Activa SSL en la conexión                | `false`                                   |
-| `NEXT_PUBLIC_APP_URL` | URL pública de la app               | `https://declaraciones.tudominio.com`     |
-| `PORT`           | Puerto expuesto por el contenedor        | `3000`                                    |
+| Variable         | Descripción                              | Default                                  |
+|------------------|------------------------------------------|------------------------------------------|
+| `POSTGRES_DB`     | Nombre de la base de datos (auto-creada) | `declaraciones`                          |
+| `POSTGRES_USER`   | Usuario PostgreSQL                       | `declaraciones`                          |
+| `POSTGRES_PASSWORD` | Contraseña PostgreSQL                  | `declaraciones`                          |
+| `NEXT_PUBLIC_APP_URL` | URL pública de la app               | `https://declaraciones.tudominio.com`   |
+| `PORT`           | Puerto expuesto por el contenedor app    | `3000`                                   |
+
+> `DATABASE_URL` se construye automáticamente a partir de `POSTGRES_*` en el `docker-compose.yml`. No necesitas configurarla manualmente.
 
 ## Despliegue en Dokploy
 
-### 1. Crear base de datos PostgreSQL en Dokploy
+### 1. Crear aplicación en Dokploy
 
-Ya creada según tus credenciales:
-- **Host interno**: `dbrender-declaraciones-ofbykv`
-- **Puerto interno**: `5432`
-- **DB / User / Password**: `declaraciones`
+- **Type**: Docker Compose
+- **Source**: repo `ferrosero91/declaraciones` rama `main`
+- Dokploy detecta `docker-compose.yml` y `Dockerfile` automáticamente
 
-### 2. Crear aplicación en Dokploy
-
-- Tipo: **Docker Compose**
-- Source: tu repositorio Git (rama `main`)
-- Dokploy detecta automáticamente `docker-compose.yml` y `Dockerfile` en la raíz
-
-### 3. Variables de entorno (Environment)
-
-Configurar en Dokploy → Application → Environment:
+### 2. Variables de entorno (Application → Environment)
 
 ```
-DATABASE_URL=postgresql://declaraciones:declaraciones@dbrender-declaraciones-ofbykv:5432/declaraciones
-DATABASE_SSL=false
+POSTGRES_DB=declaraciones
+POSTGRES_USER=declaraciones
+POSTGRES_PASSWORD=declaraciones
 NEXT_PUBLIC_APP_URL=https://declaraciones.tudominio.com
-NODE_ENV=production
 PORT=3000
 ```
 
-### 4. Configurar dominio
+> Cambia `POSTGRES_PASSWORD` por una contraseña segura en producción.
 
-- Dokploy → Application → Domains → agregar tu dominio o subdominio generado
-- Target Port: `3000`
+### 3. Configurar dominio (Application → Domains)
 
-### 5. Desplegar
+- Agregar dominio o subdominio
+- **Target Port**: `3000`
+- Dokploy genera proxy Traefik + Let's Encrypt automáticamente
 
-- Click en **Deploy**
-- En el primer arranque, el contenedor ejecuta `node scripts/init-db.js` automáticamente (idempotente), creando las tablas necesarias
+### 4. Deploy
 
-### 6. (Opcional) Cargar datos de ejemplo
+Click **Deploy**. En el primer arranque:
+1. `postgres:15-alpine` arranca con el volumen `postgres_data` (persistente)
+2. El healthcheck de Postgres espera a que esté listo (`pg_isready`)
+3. Una vez healthy, arranca el contenedor `app`
+4. `start.sh` ejecuta `node scripts/init-db.js` (idempotente, crea las tablas `users`)
+5. Finalmente arranca `npm start`
 
-Vía Dokploy → Application → Terminal:
+### 5. (Opcional) Cargar datos de ejemplo
 
+**Application → Terminal**:
 ```bash
 node scripts/seed-data.js
 ```
 
-## Red Docker
+## Notas técnicas
 
-El `docker-compose.yml` incluye `networks: dokploy-network (external: true)`. Esta red la crea Dokploy automáticamente y comparte entre apps y bases de datos. Si el nombre difiere en tu instancia, edítalo en el compose.
+- **Volumen `postgres_data`**: Dokploy/ Docker mantiene los datos entre reinicios y deploys del app. Solo se pierde si eliminas el volumen manualmente.
+- **Redes**: red `internal` (bridge) entre app y db; red `dokploy-network` (external) para que Traefik pueda enrutar el tráfico al contenedor app.
+- **No exponer Postgres a Internet**: el servicio `db` no tiene mapeo de puerto, solo es accesible dentro de la red `internal`. Más seguro.
+- **Inicialización automática**: `start.sh` hace `init-db` en cada arranque (idempotente) — no requiere pasos manuales.
 
 ## Scripts
 

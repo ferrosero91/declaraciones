@@ -1,20 +1,48 @@
 services:
+  db:
+    image: postgres:15-alpine
+    container_name: declaraciones-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-declaraciones}
+      POSTGRES_USER: ${POSTGRES_USER:-declaraciones}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-declaraciones}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-declaraciones} -d ${POSTGRES_DB:-declaraciones}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - internal
+
   app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: declaraciones-app
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL}
-      - DATABASE_SSL=${DATABASE_SSL:-false}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-declaraciones}:${POSTGRES_PASSWORD:-declaraciones}@db:5432/${POSTGRES_DB:-declaraciones}
+      - DATABASE_SSL=false
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
     ports:
       - "${PORT:-3000}:3000"
     networks:
+      - internal
       - dokploy-network
 
+volumes:
+  postgres_data:
+
 networks:
+  internal:
+    driver: bridge
   dokploy-network:
     external: true
