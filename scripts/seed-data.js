@@ -1,9 +1,10 @@
-const Database = require('better-sqlite3')
-const path = require('path')
-const crypto = require('crypto')
+require('dotenv').config({ path: '.env.local' })
+const { Pool } = require('pg')
 
-const DB_PATH = process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'declaraciones.db')
-const db = new Database(DB_PATH)
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false,
+})
 
 const realUsers = [
   { cedula: '87063020', nombres: 'LUIS HERNANDO PORTILLO RIASCOS', celular: '3167945111' },
@@ -55,40 +56,36 @@ function calculateDueDate(cedula) {
   return TAX_CALENDAR[lastTwo] || '24-10-2025'
 }
 
-function seedDatabase() {
+async function seedDatabase() {
   try {
-    console.log('Inicializando seed...')
+    console.log('Iniciando seed...')
 
-    const insert = db.prepare(`
-      INSERT INTO users (id, cedula, nombres, celular, fecha_vencimiento, notificado, last_notification)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `)
+    await pool.query('DELETE FROM users')
 
-    const insertMany = db.transaction((users) => {
-      for (const user of users) {
-        const id = crypto.randomUUID()
-        const fechaVencimiento = calculateDueDate(user.cedula)
-        insert.run(id, user.cedula, user.nombres, user.celular, fechaVencimiento, 0, null)
-      }
-    })
+    for (const user of realUsers) {
+      const fechaVencimiento = calculateDueDate(user.cedula)
+      await pool.query(
+        `INSERT INTO users (cedula, nombres, celular, fecha_vencimiento, notificado)
+         VALUES ($1, $2, $3, $4, false)`,
+        [user.cedula, user.nombres, user.celular, fechaVencimiento],
+      )
+    }
 
-    insertMany(realUsers)
-
-    const stats = db.prepare(`
+    const stats = await pool.query(`
       SELECT
         COUNT(*) as total,
-        SUM(CASE WHEN notificado = 1 THEN 1 ELSE 0 END) as notified,
-        SUM(CASE WHEN notificado = 0 THEN 1 ELSE 0 END) as pending
+        COUNT(*) FILTER (WHERE notificado = true) as notified,
+        COUNT(*) FILTER (WHERE notificado = false) as pending
       FROM users
-    `).get()
+    `)
 
     console.log('Seed completado')
-    console.log(`Total: ${stats.total} | Notificados: ${stats.notified} | Pendientes: ${stats.pending}`)
+    console.log(`Total: ${stats.rows[0].total} | Notificados: ${stats.rows[0].notified} | Pendientes: ${stats.rows[0].pending}`)
   } catch (error) {
     console.error('Error en seed:', error.message)
     process.exit(1)
   } finally {
-    db.close()
+    await pool.end()
   }
 }
 

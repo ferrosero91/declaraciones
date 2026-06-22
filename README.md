@@ -9,29 +9,29 @@ Sistema minimalista para gestión de recordatorios de declaración de renta a tr
 - Envío de recordatorios por WhatsApp personal (vía `wa.me`, 100% gratuito)
 - Importación masiva desde `.xlsx` / `.csv`
 - Estadísticas en tiempo real
-- Almacenamiento en SQLite (sin servicios externos)
+- Base de datos PostgreSQL externa (Dokploy u otro proveedor)
 
 ## Stack
 
 - **Frontend**: Next.js 15, React 19, TypeScript, Tailwind CSS 4, shadcn/ui
-- **Base de datos**: SQLite (better-sqlite3) — archivo único, sin servidor
+- **Base de datos**: PostgreSQL (mediante `pg`)
 
 ## Instalación local
 
 ```bash
 npm install --legacy-peer-deps
 cp .env.example .env.local
-npm run db:setup   # crea data/declaraciones.db + datos de ejemplo
+# Editar .env.local con tu DATABASE_URL
+npm run db:setup   # crea tablas + inserta datos de ejemplo
 npm run dev
 ```
-
-La base de datos se crea automáticamente en `./data/declaraciones.db` al primer arranque.
 
 ## Variables de entorno
 
 | Variable         | Descripción                              | Default                          |
 |------------------|------------------------------------------|----------------------------------|
-| `DATABASE_PATH`  | Ruta del archivo SQLite                  | `./data/declaraciones.db`       |
+| `DATABASE_URL`    | URL de conexión PostgreSQL                | `postgresql://user:password@host:port/database` |
+| `DATABASE_SSL`   | Activa SSL en la conexión (`true`/`false`) | `false`                          |
 | `NEXT_PUBLIC_APP_URL` | URL pública de la app               | `http://localhost:3000`          |
 
 ## Scripts
@@ -40,30 +40,39 @@ La base de datos se crea automáticamente en `./data/declaraciones.db` al primer
 npm run dev        # desarrollo
 npm run build      # build de producción
 npm run start      # servidor producción
-npm run db:init    # crear tablas (auto al primer arranque)
+npm run db:init    # crear esquema
 npm run db:seed    # insertar datos de ejemplo
 npm run db:setup   # init + seed
 npm run lint       # eslint
 ```
 
-## Deploy en Render
+## Deploy en Render + Dokploy Postgres
 
-SQLite requiere almacenamiento persistente. Configura un **Disk** en el servicio web:
+1. **Crear un servidor PostgreSQL en Dokploy** (o cualquier otro proveedor).
+2. **Exponer el puerto externamente** en Dokploy (Settings → External Port). Una vez expuesto, la URL queda:
+   ```
+   postgresql://declaraciones:declaraciones@<IP_PUBLICA_VPS>:<PUERTO_EXTERNO>/declaraciones
+   ```
+3. **En Render**:
+   - **Build Command**: `npm install --legacy-peer-deps && npm run build`
+   - **Start Command**: `npm start`
+   - **Variables de entorno**:
+     - `DATABASE_URL` = URL externa del paso 2
+     - `DATABASE_SSL` = `false` (o `true` si configuraste TLS en el VPS)
+     - `NEXT_PUBLIC_APP_URL` = `https://declaraciones-tributarias.onrender.com`
+4. **Inicializar BD** (una sola vez): desde la Shell de Render ejecuta:
+   ```bash
+   npm run db:setup
+   ```
 
-1. Crear Web Service conectando el repo
-2. Build Command: `npm install --legacy-peer-deps && npm run build`
-3. Start Command: `npm start`
-4. Agregar Disk (montado en `/opt/render/data`, mínimo 1 GB)
-5. Variable de entorno:
-   - `DATABASE_PATH=/opt/render/data/declaraciones.db`
-
-> **Nota**: El plan `free` de Render no permite Disks persistentes — los datos se reinician entre deploys. Considera un plan de pago o usa Docker/volumen externo.
-
-El `render.yaml` ya incluye la configuración del disk.
+> ⚠️ **Seguridad**: exponer PostgreSQL a internet debe ir acompañado de:
+> - Firewall que permita solo la IP de Render
+> - Conexión fortalecida (contraseña larga, `pg_hba.conf` restrictivo)
+> - Idealmente TLS habilitado (`DATABASE_SSL=true`)
 
 ## Calendario Tributario 2025
 
-El sistema calcula las fechas de vencimiento según los últimos 2 dígitos de la cédula (definido en `lib/tax-calendar.ts`):
+El sistema calcula las fechas de vencimiento según los últimos 2 dígitos de la cédula (`lib/tax-calendar.ts`):
 
 - Agosto: terminaciones 01–26
 - Septiembre: terminaciones 27–66

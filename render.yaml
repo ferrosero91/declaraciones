@@ -3,16 +3,14 @@ services:
     name: declaraciones-tributarias
     env: node
     plan: free
-    buildCommand: npm install && npm run build
+    buildCommand: npm install --legacy-peer-deps && npm run build
     startCommand: npm start
-    disk:
-      name: sqlite-data
-      mountPath: /opt/render/data
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATABASE_PATH
-        value: /opt/render/data/declaraciones.db
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: "false"
       - key: NEXT_PUBLIC_APP_URL
         value: https://declaraciones-tributarias.onrender.com

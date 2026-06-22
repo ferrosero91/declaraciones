@@ -15,7 +15,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  serverExternalPackages: ['better-sqlite3'],
+  serverExternalPackages: ['pg'],
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,

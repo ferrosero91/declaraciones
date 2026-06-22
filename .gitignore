@@ -8,12 +8,6 @@
 # production
 /build
 
-# sqlite
-/data/
-*.db
-*.db-shm
-*.db-wal
-
 # misc
 .DS_Store
 *.pem
