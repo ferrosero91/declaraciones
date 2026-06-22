@@ -8,7 +8,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+RUN npm run build && \
+    echo "=== Verificando archivos CSS generados ===" && \
+    ls -la .next/static/css/ && \
+    wc -c .next/static/css/*.css && \
+    echo "=== Primeros bytes del CSS ===" && \
+    head -c 200 .next/static/css/*.css
 
 FROM node:22-alpine AS runner
 WORKDIR /app
