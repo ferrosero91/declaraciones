@@ -8,4 +8,4 @@ node scripts/init-db.js || {
 }
 
 echo "Arrancando Next.js en produccion..."
-exec npm start
+exec node server.js
